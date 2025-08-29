@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>History Lectures Timeline</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f9f9f9; margin: 0; padding: 20px; }
+    h1 { text-align: center; margin-bottom: 20px; }
+    .scroller { width: 100%; overflow-x: auto; }
+    .timeline { position: relative; height: calc(var(--rows) * 120px + 40px); /* dynamic based on row count */ }
+    .timeline::before {
+      content: '';
+      position: absolute;
+      top: 50%; left: 0;
+      height: 4px;
+      background: #ccc;
+      width: 100%;
+      transform: translateY(-50%);
+    }
+    .event {
+      position: absolute;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 10px;
+      text-align: center;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      min-width: 100px;
+      max-width: 400px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .event::after {
+      content: '';
+      position: absolute;
+      top: 50%; left: 0;
+      width: 8px; height: 8px;
+      background: #007BFF;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+    }
+    .title { font-weight: bold; margin-bottom: 4px; }
+    .tag { display: inline-block; background: #007BFF; color: #fff; font-size: 11px; padding: 2px 4px; border-radius: 3px; margin-bottom: 4px; }
+    .range { font-size: 11px; color: #555; }
+    a { color: #007BFF; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h1>History Lectures Timeline</h1>
+  <div class="scroller">
+    <div id="timeline" class="timeline"></div>
+  </div>
+
+  <script>
+    // Lecture data (replace with JSON load/fetch)
+    const lectures = [
+      { title: 'The Agricultural Revolution', link: 'https://youtu.be/Yvatzx2lG68', tags: ['Global'], start: -10000, end: -3000 },
+      { title: 'Ancient Egypt & Mesopotamia', link: 'https://youtu.be/OEukRb5nPAE', tags: ['Middle East'], start: -3000, end: -500 },
+      { title: 'The Fall of Rome', link: 'https://youtu.be/_1UlfiBtags', tags: ['Europe'], start: -500, end: 500 },
+      { title: 'The Mongol Empire', link: 'https://youtu.be/rGm8NwLTjHA', tags: ['Central Asia'], start: 1206, end: 1368 },
+      { title: 'The Age of Discovery', link: 'https://youtu.be/H3G_MW4fj94', tags: ['Global'], start: 1400, end: 1600 }
+    ];
+
+    const times = lectures.flatMap(l => [l.start, l.end]);
+    const minTime = Math.min(...times);
+    const maxTime = Math.max(...times);
+    const totalDuration = maxTime - minTime;
+
+    const scale = 2; // pixels per year (adjust as needed)
+    const timeline = document.getElementById('timeline');
+
+    // Compute required width and height rows
+    lectures.sort((a,b) => a.start - b.start);
+    const rows = [];
+    lectures.forEach(lec => {
+      let placed = false;
+      for (let i = 0; i < rows.length; i++) {
+        if (lec.start > rows[i]) { rows[i] = lec.end; lec.row = i; placed = true; break; }
+      }
+      if (!placed) { lec.row = rows.length; rows.push(lec.end); }
+    });
+
+    // Set CSS variable for rows count and timeline total width
+    timeline.style.setProperty('--rows', rows.length);
+    timeline.style.width = `${totalDuration * scale}px`;
+
+    lectures.forEach(lec => {
+      const el = document.createElement('div'); el.className = 'event';
+      const left = (lec.start - minTime) * scale;
+      const duration = lec.end - lec.start;
+      let width = duration * scale;
+      width = Math.max(100, Math.min(400, width));
+      el.style.left = `${left}px`;
+      // vertical centering by row
+      const centerY = rows.length * 60;
+      el.style.top = `${centerY + (lec.row - (rows.length-1)/2)*100}px`;
+      el.style.width = `${width}px`;
+
+      el.innerHTML = `
+        <div class="title"><a href="${lec.link}" target="_blank">${lec.title}</a></div>
+        <div class="tag">${lec.tags.join(', ')}</div>
+        <div class="range">${lec.start} – ${lec.end}</div>
+      `;
+      timeline.appendChild(el);
+    });
+
+    window.addEventListener('resize', () => location.reload());
+  </script>
+</body>
+</html>
