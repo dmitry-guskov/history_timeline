@@ -115,7 +115,8 @@
   </div>
 
   <script>
-    const lectures = [
+    // Fallback data (used if lectures.json isn't available when opening from file://)
+    const hardcodedLectures = [
   {
     "title": "Япония 1853-1869. Конец изоляции.",
     "videoId": "OvZ0d--vKSE",
@@ -1189,7 +1190,10 @@
     "publishedAt": "2023-12-07T17:00:49Z"
   }
 
-];
+    ];
+
+    // Working dataset (replaced after successful fetch)
+    let lectures = hardcodedLectures;
 
 
     const tagColors = {
@@ -1199,16 +1203,22 @@
       'Central Asia': '#fdcb6e',
       'East Asia': '#0984e3',
       'Americas': '#d63031',
+      'America': '#d63031',
+      'North America': '#d63031',
+      'South America': '#ff7675',
       'Africa': '#00cec9',
-      'lecture': '#0984e3',
+      'Asia': '#00cec9',
       'USA': '#d63031',
       '20th century': '#6C5CE7',
       'Ancient History': '#00b894',
       'Egypt': '#fdcb6e',
       'Medieval History': '#e17055',
       'Japan': '#0984e3',
-      'Asia': '#00cec9',
-      'Hellenistic Period': '#6C5CE7'
+      'Eurasia': '#55efc4',
+      'Anatolia': '#e84393',
+      'Mesopotamia': '#a29bfe',
+      'Hellenistic Period': '#6C5CE7',
+      'lecture': '#636e72'
     };
 
     const timeline = document.getElementById('timeline');
@@ -1225,53 +1235,66 @@
       while (timeline.firstChild) timeline.removeChild(timeline.firstChild);
     }
 
-
-    function assignRows(events, maxRows = 7) {
-      const rows = new Array(maxRows).fill(-Infinity); // initialize with very old end times
-
+    // Assign rows based on pixel positions to avoid visual overlaps
+    function assignRowsByPixels(events, gapPx = 12) {
+      const rowRights = []; // rightmost x per row
       events.forEach(lec => {
-        lec.row = 0;
-        for (let i = 0; i < rows.length; i++) {
-          if (lec.start >= rows[i]) {
+        let placed = false;
+        for (let i = 0; i < rowRights.length; i++) {
+          if (lec.left >= rowRights[i] + gapPx) {
             lec.row = i;
-            rows[i] = lec.end;
+            rowRights[i] = lec.left + lec.width;
+            placed = true;
             break;
           }
         }
+        if (!placed) {
+          lec.row = rowRights.length;
+          rowRights.push(lec.left + lec.width);
+        }
       });
-
-      return maxRows;
+      return rowRights.length;
     }
 
     // Layout and render timeline
     function renderTimeline() {
       clearTimeline();
 
-      // Sort lectures by start time ascending
-      lectures.sort((a,b) => a.start - b.start);
+      // Keep only valid entries with numeric start/end
+      const cleaned = lectures
+        .filter(lec => typeof lec.start === 'number' && typeof lec.end === 'number')
+        .map(lec => ({ ...lec }));
 
-      // Assign rows
-      const rowCount = assignRows(lectures);
+      if (cleaned.length === 0) return;
 
-      // Position and width calculation
-      let prevX = 0;
-      lectures.forEach((lec, idx) => {
-        // duration in years, ensure positive (in case start > end)
-        const duration = Math.abs(lec.end - lec.start);
-        let width = duration * scale;
-        width = Math.max(150, width); // minimum width for readability
+      // Sort by start year
+      cleaned.sort((a, b) => a.start - b.start);
 
+      // Compute time domain
+      const minYear = Math.min(...cleaned.map(l => Math.min(l.start, l.end)));
+      const maxYear = Math.max(...cleaned.map(l => Math.max(l.start, l.end)));
+
+      // Map to pixel positions using a true time axis
+      cleaned.forEach(lec => {
+        const startYear = Math.min(lec.start, lec.end);
+        const endYear = Math.max(lec.start, lec.end);
+        const duration = Math.max(0, endYear - startYear);
+        const left = (startYear - minYear) * scale;
+        const width = Math.max(2, duration * scale);
+        lec.left = left;
         lec.width = width;
-        lec.pos = prevX;
-        prevX += width + 20; // 20px gap between events
       });
 
-      // Set timeline width and height CSS variables
-      timeline.style.width = `${prevX + 40}px`;
+      // Assign rows to avoid overlaps in pixels
+      const rowCount = assignRowsByPixels(cleaned);
+
+      // Determine overall width
+      const maxRight = Math.max(...cleaned.map(l => l.left + l.width));
+      timeline.style.width = `${maxRight + 60}px`;
       timeline.style.setProperty('--rows', rowCount);
 
       // Render each event
-      lectures.forEach(lec => {
+      cleaned.forEach(lec => {
         const el = document.createElement('div');
         el.className = 'event';
 
@@ -1286,7 +1309,7 @@
         el.style.border = `3px solid ${color}`;
 
         // Position
-        el.style.left = `${lec.pos}px`;
+        el.style.left = `${lec.left}px`;
         // Center baseline at 50% and shift up/down by row * 80px (tighter than 100px)
         const verticalOffset = (lec.row - (rowCount - 1) / 2) * 80;
         el.style.top = `calc(50% + ${verticalOffset}px)`;
@@ -1303,8 +1326,29 @@
       });
     }
 
-    // Initial render
-    renderTimeline();
+    // Try to load external data; fall back to hardcoded when opened from file://
+    async function loadLectures() {
+      try {
+        const res = await fetch('lectures.json', { cache: 'no-cache' });
+        if (!res.ok) throw new Error('HTTP error');
+        const data = await res.json();
+        if (Array.isArray(data) && data.length) {
+          lectures = data.map(item => ({
+            title: item.title,
+            videoId: item.videoId,
+            url: item.url || (item.videoId ? `https://youtu.be/${item.videoId}` : '#'),
+            tags: Array.isArray(item.tags) ? item.tags : [],
+            start: item.start,
+            end: item.end,
+            publishedAt: item.publishedAt
+          }));
+        }
+      } catch (e) {
+        // Likely opened via file://; keep hardcodedLectures
+      } finally {
+        renderTimeline();
+      }
+    }
 
     // Zoom handlers
     document.getElementById('zoomIn').addEventListener('click', () => {
@@ -1322,6 +1366,9 @@
       // Optionally debounce or throttle in a real app
       renderTimeline();
     });
+
+    // Kick off
+    loadLectures();
   </script>
 </body>
 </html>
